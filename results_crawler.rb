@@ -18,7 +18,7 @@ require 'open-uri'
 
 class Race
 
-	attr_accessor :name, :race_type, :date, :links, :results, :results_link
+	attr_accessor :name, :race_type, :date, :links, :results, :results_link, :status
 
 	def initialize(name)
 		self.name = name
@@ -29,6 +29,7 @@ class ResultsCrawler
 
 	attr_accessor :config
 	attr_accessor :config_file
+	attr_accessor :races
 	# def init(config)
 	# 	self.config = config
 	# end
@@ -63,49 +64,65 @@ class ResultsCrawler
 
 		puts "first step: #{first_step_name}"
 		links = []
-		crawl(steps, first_step)
+		crawl(steps, first_step, config.output)
 		puts "results: #{links.inspect}"
 		links
 	end
 
-	def crawl(steps, start_step)
+	def crawl(steps, start_step, stop_step)
 		output = []
 
 		puts "crawl starting at step: #{start_step.name}"
 		# if curr_step.name == start_step
-			crawl_rec(steps, start_step, output)
+		self.races = crawl_rec(steps, start_step, output)
+		steps.shift  # skip first step
+
+		steps.each do |step|
+			puts "crawl_races with step: #{step.name}  #{step.inspect}"
+			crawl_races(self.races, step, stop_step)
+		end
 		# end
-		puts "output: #{output.inspect}"
+
+
+		puts "output: #{races.inspect}"
+	end
+
+
+	def crawl_races(races, step, stop_step)
+		puts "crawl_races step: #{step.name}"
+		races = races.map do |name, race|
+			fetch_next_link(race, step, stop_step)
+		end
+		puts "crawl_races DONE step: #{step.name}"
+		puts races.inspect
+		races
 	end
 
 	def crawl_rec(steps, curr_step, links = [])
 		puts "crawl_rec results: #{links.inspect}"
 		puts "curr_step: #{curr_step.inspect}"
 		races = {}
-		if curr_step.input_links.is_a?(Array)
+
+		if curr_step.dependent # go to other step 
+			# recurse
+			puts "\n step #{curr_step.name}"
+			next_step_name = curr_step.dependent
+			next_step = find_step(steps, next_step_name)
+			puts "before rec crawl_rec curr, next: #{curr_step.name} #{next_step.name}"
+			races = crawl_rec(steps, next_step, races)
+		elsif curr_step.input_links
 			# collect links
 			puts "crawl_rec: collect links: #{curr_step.input_links.inspect}"
 			links = curr_step.input_links
+			action = curr_step.action
 
 			# get links
 			links.each do |link|
-				puts "crawl_rec  step: #{curr_step.name} link: #{link.inspect}"
-				fetch_race_links(link, f, races)
+				puts "crawl_rec  curr: #{curr_step.name}  action: #{action} link: #{link.inspect}"
+				self.send(action, link, curr_step, races)  # fetch page links
 			end
-			# crawl_rec(steps, curr_step, fetched_links)
-		else # go to other step 
-			# recurse
-			puts "step #{curr_step.name}"
-			next_step_name = curr_step.input_links
-			next_step = find_step(steps, next_step_name)
-			races = crawl_rec(steps, next_step, links)
-
-			if fetched_links.any?
-				puts "fetched_links: #{fetched_links.inspect}"
-			end
-
 		end
-		links
+		races
 	end
 
 	def find_step(steps, stepname)
@@ -113,13 +130,75 @@ class ResultsCrawler
 		steps.any? && steps.first
 	end
 
+	def fetch_next_link(race, curr_step, stop_step)
+		links = []
+
+		puts "fetch_next_link race: step: #{curr_step}.name  #{race.inspect}"
+		visit_links = race.results_link
+
+		return race if curr_step.name == stop_step
+
+		race.results_link = []
+		visit_links.each do |link|
+			page = Nokogiri::HTML(open(link))
+	
+			puts "fetch_next_links: #{link} "
+			
+			filter = curr_step.filters.first
+			puts "filter: #{filter.inspect}"
+			h = filter.to_h
+		
+			elements = page.css(h[:container])
+	
+			elements.map do |element|
+				date = ""
+	
+				next_link = ""
+				if h.key? :links
+					sel = h[:links]
+					puts "selector: #{sel}"
+					elem = element.css(sel)
+					if elem.nil? || elem.empty?
+						puts "No link to results found, skipping"
+						race.status = :failed
+						next
+					end
+
+					puts "elem: #{elem.inspect}"
+					next_link = elem.first.attributes["href"].value
+					puts "fetch_next_link FOUND #{next_link}"
+				end
+				# puts "link: #{link}"
+	
+				name = race.name
+				if h.key? :race_name
+					sel = h[:race_name]
+					name = element.css(sel).text
+					puts "race_name: #{name}"
+					# add info to already found race, or create race
+					race.date ||= date # only set if not already set
+				end
+				
+				if !next_link.empty?
+					race.results_link = []
+					race.results_link << next_link
+					# races[name] = race
+					puts "LAST step: #{next_link} race: #{race.inspect}"
+					puts "found race #{name}  next_link: #{next_link}  results_link: #{race.results_link}"
+				end
+
+			end
+		end
+		race
+	end
+
 	# returns [Race(name, type, date, link)]
 	# get a list ofobjects with race data and link to more info
-	def fetch_race_links(link, filters)
+	def fetch_race_links(link, curr_step, races = {})
 		page = Nokogiri::HTML(open(link))
 
-		races = {}
-
+		filters = curr_step.filters
+		puts "fetch race_links: #{races.size}"
 		found = filters.map do |f| 
 			h = f.to_h
 
@@ -128,14 +207,6 @@ class ResultsCrawler
 			elements = page.css(f["container"])
 
 			elements.map do |element|
-				# if f.key? "race_type"
-				# 	race_type =
-				# 	if f["race_type"].start_with? "[" 
-				# 		element[f["race_type"]]
-				# 	else
-				# 		element.css(f["race_type"])
-				# 	end
-				# end
 				date = ""
 				if h.key? :race_date
 					sel = h[:race_date]
@@ -147,23 +218,25 @@ class ResultsCrawler
 					sel = h[:links]
 					link = element.css(sel).first.attributes["href"].value
 				end
-				puts "link: #{link}"
+				# puts "link: #{link}"
 
 				if h.key? :race_name
 					sel = h[:race_name]
 					name = element.css(sel).text
 
 					# add info to already found race, or create race
-					race = Race.new(name)
+					race = races[name] || Race.new(name)
 					race.date ||= date # only set if not already set
-					race.results_link
+					race.results_link ||= []
+					race.results_link << link
 					races[name] = race
-					puts "found race"
+					puts "found race #{name}  results_link: #{race.results_link}"
 				end
 			end
 		end
 		races
 	end
+
 
 	def example_cfg
 		{

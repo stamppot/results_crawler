@@ -5,9 +5,9 @@
 				"name": "step1",
 				"action": "fetch_race_links",
 				"input_links": [
-					"http://www.mylapseventtiming.nl/events/?searchDate=2016-06",
-					"http://www.mylapseventtiming.nl/events/?searchDate=2016-07",
-					"http://www.mylapseventtiming.nl/events/?searchDate=2016-08",
+					// "http://www.mylapseventtiming.nl/events/?searchDate=2016-06",
+					// "http://www.mylapseventtiming.nl/events/?searchDate=2016-07",
+					// "http://www.mylapseventtiming.nl/events/?searchDate=2016-08",
 					"http://www.mylapseventtiming.nl/events/?searchDate=2016-09"
 				],
 				"filters": [
@@ -25,15 +25,27 @@
 			},
 			{
 				"name": "step2",
-				"input_links": "step1",
-				"title": "h2.entry-title",
-				"date": "h4",
-				"filters": ["Ga naar de uitslagen"]
+				"action": "fetch_next_link",
+				"dependent": "step1",
+				// "title": "h2.entry-title",
+				// "date": "h4",
+				"filters": [
+					{
+						"container": "div.container",
+						"race_name": "h2.entry-title",
+						"links": "a.right[href]"
+					}
+				]
 			},
 			{
 				"name": "step3",
-				"input_links": "step2",
-				"filters": ["Overall"]
+				"dependent": "step2",
+				"filters": [
+					{
+						"links": "a[href]",
+						"regex": "Overall"
+					}
+				]
 			}
 		],
 	"output": "step3"
