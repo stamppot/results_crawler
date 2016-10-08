@@ -1,0 +1,40 @@
+{
+	"steps":
+		[
+			{
+				"name": "step1",
+				"action": "fetch_race_links",
+				"input_links": [
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-06",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-07",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-08",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-09"
+				],
+				"filters": [
+					{
+						"container": "ul.events-list > li",
+						"race_type": "span.tri[title]",
+						"race_date": "time",
+						"race_name": "a.name",
+						"links"	   : "a[href]"
+					},
+					{	"css": "span.dua",
+						"type": "['title']"
+					}
+				]
+			},
+			{
+				"name": "step2",
+				"input_links": "step1",
+				"title": "h2.entry-title",
+				"date": "h4",
+				"filters": ["Ga naar de uitslagen"]
+			},
+			{
+				"name": "step3",
+				"input_links": "step2",
+				"filters": ["Overall"]
+			}
+		],
+	"output": "step3"
+}
