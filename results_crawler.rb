@@ -81,9 +81,10 @@ class ResultsCrawler
 			puts "crawl_races with step: #{step.name}  #{step.inspect}"
 			crawl_races(self.races, step, stop_step)
 		end
-		# end
 
+		# 
 
+		fetch_overview_page(races, steps.last)
 		puts "output: #{races.inspect}"
 	end
 
@@ -96,6 +97,63 @@ class ResultsCrawler
 		puts "crawl_races DONE step: #{step.name}"
 		puts races.inspect
 		races
+	end
+
+	def fetch_overview_page(races, step)
+		puts "fetch_overview_page"
+		filters = step.filters
+
+
+		races.values.map do |race|
+			puts "race: #{race.inspect}"
+			found_links = {}
+			next if race.results_link.empty?
+
+			link = race.results_link.first
+
+			absolute_path = link.split("/")[0..-1].join("/")
+			puts "absolute path: #{absolute_path}"
+
+			page = Nokogiri::HTML(open(link))
+
+			puts "fetch race_links: #{races.size}"
+			filters.each do |f| 
+				h = f.to_h
+	
+				puts "filter: #{f.inspect}"
+	
+				elements = page.css(f["container"])
+	
+				elements.each do |element|
+					link = ""
+					if h.key? :links
+						sel = h[:links]
+						elems = element.css(sel)
+						elems.map do |elem|
+							link = elem.attributes["href"].value
+							text = elem.text
+							puts "text: #{text} : #{link}"
+							if !link.start_with? "http"
+								link = absolute_path + link
+								puts "full link: #{link}"
+							end
+					
+							if h.key? :regex
+								regex = h[:regex]
+								if /#{regex}/ =~ text
+									puts "include link: #{text} #{link}"
+									found_links[text] = link
+								else
+									puts "skip link: #{text} #{regex}"
+								end
+							end
+						end
+					end
+				end
+			end
+			found_links
+		end
+
 	end
 
 	def crawl_rec(steps, curr_step, links = [])

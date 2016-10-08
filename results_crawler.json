@@ -40,9 +40,11 @@
 			{
 				"name": "step3",
 				"dependent": "step2",
+				"action": "fetch_overview_page",
 				"filters": [
 					{
-						"links": "a[href]",
+						"container": "table+table",
+						"links": "a",
 						"regex": "Overall"
 					}
 				]
