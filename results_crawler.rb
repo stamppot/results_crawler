@@ -3,7 +3,7 @@ require 'json'
 require 'ostruct'
 require 'nokogiri'
 require 'open-uri'
-
+# require 'CSVHasher'
 # class CrawlerConfig
 
 # 	attr_accessor :steps, :output
@@ -18,11 +18,17 @@ require 'open-uri'
 
 class Race
 
-	attr_accessor :name, :race_type, :date, :links, :results, :results_link, :status
+	attr_accessor :name, :race_type, :date, :links, :results, :results_link, :status, :result_pages
+	attr_accessor :race_results  # hash of category -> [RaceResults]
 
 	def initialize(name)
 		self.name = name
+		self.race_results = {}
 	end
+end
+
+class RaceResult
+	attr_accessor :race_name, :race_date, :person_name, :category, :results
 end
 
 class ResultsCrawler
@@ -84,8 +90,15 @@ class ResultsCrawler
 
 		# 
 
-		fetch_overview_page(races, steps.last)
+		overview_pages = fetch_overview_page(races, steps.last)
+		# puts "overview pages: #{overview_pages.class} #{overview_pages.inspect}"
+		found_links, missing_links  = overview_pages.compact.partition {|h| !h.nil? && !h.empty? }
+
 		puts "output: #{races.inspect}"
+
+		# TODO: call fetch_result_pages
+
+		fetch_result_pages self.races
 	end
 
 
@@ -99,6 +112,49 @@ class ResultsCrawler
 		races
 	end
 
+	def fetch_result_pages(races)
+
+		races.each do |name, race|
+
+			results = {}
+			race.result_pages.compact.each do |category, link|
+				page = Nokogiri::HTML(open(link))
+
+				csv_hashes = results_page_parser(page) 
+
+				results[category] = csv_hashes
+			end
+			race.race_results = results
+		end
+	end
+
+
+	def results_page_parser(page)
+		# csv = CSV.new(body, :headers => true, :header_converters => :symbol, :converters => [:all, :blank_to_nil])
+		# csv.to_a.map {|row| row.to_hash }
+
+		headers = page.css('table tr th.FIELDNAMES').map {|head| head.text }
+		puts "HEADERS: #{headers.inspect}"
+		page.css('table tr').each do |row|
+	  		tarray = [] 
+  			row.xpath('td').each do |cell|
+    			tarray << cell.text
+	  		end
+  			csv << tarray
+		end
+
+    	csv = CSV.generate(:col_sep => ";", :row_sep => :auto) do |csv_output|
+      		csv_output << headers
+    	  	tarray.each { |line| csv_output << line }
+    	end
+		
+		puts "CSV output:\n#{csv}"
+
+		csv_hashes = CSVHasher.hashify_from_string(csv)
+		puts "csv_hashes: #{csv_hashes.inspect}"
+		csv_hashes
+	end
+
 	def fetch_overview_page(races, step)
 		puts "fetch_overview_page"
 		filters = step.filters
@@ -109,9 +165,10 @@ class ResultsCrawler
 			found_links = {}
 			next if race.results_link.empty?
 
-			link = race.results_link.first
+			link = race.results_link.select {|l| !l.include?("@") }.first
 
-			absolute_path = link.split("/")[0..-1].join("/")
+			split_path = link.split("/")[0...-1]
+			absolute_path = split_path.join("/")
 			puts "absolute path: #{absolute_path}"
 
 			page = Nokogiri::HTML(open(link))
@@ -130,30 +187,46 @@ class ResultsCrawler
 						sel = h[:links]
 						elems = element.css(sel)
 						elems.map do |elem|
-							link = elem.attributes["href"].value
+							if elem.attributes["href"].nil?
+								"No links found: #{elem.inspect}"
+								next
+							end
+
+							if elem.attributes["href"].count > 1
+								puts "DOUBLE attributes: #{elem.attributes["href"].value}"
+								elem = elem.attributes["href"].select {|at| !at.value.contains("@") }
+							end
+							link = elem.attributes["href"].value.strip
 							text = elem.text
 							puts "text: #{text} : #{link}"
 							if !link.start_with? "http"
-								link = absolute_path + link
+								link = fix_link_path(absolute_path, link)
 								puts "full link: #{link}"
 							end
 					
 							if h.key? :regex
 								regex = h[:regex]
-								if /#{regex}/ =~ text
-									puts "include link: #{text} #{link}"
+								# puts "regex: #{regex}"
+								if text =~ /#{regex}/
+									puts "include link: #{text} #{link}\n\n"
 									found_links[text] = link
 								else
-									puts "skip link: #{text} #{regex}"
+									puts "skip link: #{text}\n\n"
 								end
 							end
 						end
 					end
 				end
 			end
+			race.result_pages = found_links
 			found_links
 		end
 
+	end
+
+	def fix_link_path(absolute_path, link)
+		absolute_path += "/" if !absolute_path.end_with?("/") && !link.start_with?("/")
+		absolute_path + link
 	end
 
 	def crawl_rec(steps, curr_step, links = [])
@@ -222,7 +295,7 @@ class ResultsCrawler
 						next
 					end
 
-					puts "elem: #{elem.inspect}"
+					# puts "elem: #{elem.inspect}"
 					next_link = elem.first.attributes["href"].value
 					puts "fetch_next_link FOUND #{next_link}"
 				end
