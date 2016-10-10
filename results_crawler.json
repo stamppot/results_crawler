@@ -5,10 +5,10 @@
 				"name": "step1",
 				"action": "fetch_race_links",
 				"input_links": [
-					// "http://www.mylapseventtiming.nl/events/?searchDate=2016-06",
 					// "http://www.mylapseventtiming.nl/events/?searchDate=2016-07",
 					// "http://www.mylapseventtiming.nl/events/?searchDate=2016-08",
-					"http://www.mylapseventtiming.nl/events/?searchDate=2016-09"
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-09",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-10"
 				],
 				"filters": [
 					{
@@ -45,7 +45,7 @@
 					{
 						"container": "table+table",
 						"links": "a",
-						"regex": "Overall"
+						"regex": "Overall|NK.+Uitslag|NSK|(.+Divisie.+Individuele)"
 					}
 				]
 			}

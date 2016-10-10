@@ -3,7 +3,8 @@ require 'json'
 require 'ostruct'
 require 'nokogiri'
 require 'open-uri'
-# require 'CSVHasher'
+require 'csv'
+
 # class CrawlerConfig
 
 # 	attr_accessor :steps, :output
@@ -28,11 +29,10 @@ class Race
 end
 
 class RaceResult
-	attr_accessor :race_name, :race_date, :person_name, :category, :results
+	attr_accessor :race_name, :race_date, :race_type, :person_name, :category, :results
 end
 
 class ResultsCrawler
-
 	attr_accessor :config
 	attr_accessor :config_file
 	attr_accessor :races
@@ -56,6 +56,11 @@ class ResultsCrawler
 		self.config = JSON.parse(self.config_file, object_class: OpenStruct)
 	end
 
+	def participants
+		# test data
+		["Jens Rasmussen", "Thijs Wiggers", "Thijs de Roo", "Bram Smit", "Klaziena Korver", "Marieke de Graaf"]
+	end
+
 	def run(config_json = self.config)
 		# read config
 		# puts "cfg: #{config_json.inspect}"
@@ -75,6 +80,38 @@ class ResultsCrawler
 		links
 	end
 
+	def get_results # for participants, find better name
+		self.run if self.races.nil?
+
+		people = participants
+
+		race_results = []
+
+		# TODO: quick sort these by name, find persons by bsearch 
+		self.races.values.each do |race|
+
+			race.race_results.each do |category, results|
+
+				participants.each do |person|
+					found = results.select {|res| res["Naam"] == person }
+					if found.any?
+						rr = RaceResult.new
+						rr.race_name = race.name
+						rr.race_date = race.date
+						rr.race_type = race.race_type
+						rr.person_name = person
+						rr.category = category
+						rr.results = found.first
+						race_results << rr
+						puts "found: #{rr.inspect}"
+					end
+				end
+			end
+		end
+		race_results
+	end
+
+
 	def crawl(steps, start_step, stop_step)
 		output = []
 
@@ -87,8 +124,6 @@ class ResultsCrawler
 			puts "crawl_races with step: #{step.name}  #{step.inspect}"
 			crawl_races(self.races, step, stop_step)
 		end
-
-		# 
 
 		overview_pages = fetch_overview_page(races, steps.last)
 		# puts "overview pages: #{overview_pages.class} #{overview_pages.inspect}"
@@ -117,8 +152,18 @@ class ResultsCrawler
 		races.each do |name, race|
 
 			results = {}
-			race.result_pages.compact.each do |category, link|
-				page = Nokogiri::HTML(open(link))
+			race.result_pages ||= {}
+			race.result_pages.each do |category, link|
+				
+				begin
+					page = Nokogiri::HTML(open(link))
+				rescue OpenURI::HTTPError => error
+					response = error.io
+  					response.status
+  					response.string
+  					puts "Error: #{response.status}  #{response.string} url: #{link}"
+  					next
+  				end
 
 				csv_hashes = results_page_parser(page) 
 
@@ -130,27 +175,32 @@ class ResultsCrawler
 
 
 	def results_page_parser(page)
-		# csv = CSV.new(body, :headers => true, :header_converters => :symbol, :converters => [:all, :blank_to_nil])
+		csv = []
 		# csv.to_a.map {|row| row.to_hash }
 
 		headers = page.css('table tr th.FIELDNAMES').map {|head| head.text }
-		puts "HEADERS: #{headers.inspect}"
+		header_size = headers.size
+		# puts "HEADERS: #{headers.inspect}"
 		page.css('table tr').each do |row|
 	  		tarray = [] 
   			row.xpath('td').each do |cell|
     			tarray << cell.text
 	  		end
+	  		# puts "tarray: #{tarray.inspect}"
+	  		next if tarray.size != header_size
   			csv << tarray
 		end
 
-    	csv = CSV.generate(:col_sep => ";", :row_sep => :auto) do |csv_output|
-      		csv_output << headers
-    	  	tarray.each { |line| csv_output << line }
-    	end
-		
-		puts "CSV output:\n#{csv}"
+		# puts "CSV output:\n#{csv}"
 
-		csv_hashes = CSVHasher.hashify_from_string(csv)
+		# CSV.new(body, :headers => true, :header_converters => :symbol, :converters => [:all, :blank_to_nil])
+    	# csv_str = CSV.generate(:col_sep => ";", :row_sep => :auto) do |csv_output|
+     #  		csv_output << headers
+    	#   	csv.each { |line| csv_output << line }
+    	# end
+		# puts "csv_str: #{csv_str}"		
+
+		csv_hashes = csv.map {|row| headers.zip(row).to_h }
 		puts "csv_hashes: #{csv_hashes.inspect}"
 		csv_hashes
 	end
@@ -198,17 +248,17 @@ class ResultsCrawler
 							end
 							link = elem.attributes["href"].value.strip
 							text = elem.text
-							puts "text: #{text} : #{link}"
+							# puts "text: #{text} : #{link}"
 							if !link.start_with? "http"
 								link = fix_link_path(absolute_path, link)
-								puts "full link: #{link}"
+								# puts "full link: #{link}"
 							end
 					
 							if h.key? :regex
 								regex = h[:regex]
 								# puts "regex: #{regex}"
 								if text =~ /#{regex}/
-									puts "include link: #{text} #{link}\n\n"
+									puts "INCLUDE link: #{text} #{link}\n\n"
 									found_links[text] = link
 								else
 									puts "skip link: #{text}\n\n"
