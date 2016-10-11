@@ -271,7 +271,34 @@ class ResultsCrawler
 			race.result_pages = found_links
 			found_links
 		end
+	end
 
+	def load_or_fetch_page(link)
+		dir = "cache"
+		Dir.mkdir(dir) if !File.exist? dir
+
+		var path = dir + "/" + link_to_filename(link)
+		puts "load from: #{path}"
+
+		data = ""
+		if File.exists(path)
+			data = File.read(path)
+		else
+			# get and save file
+			open(path) { |io| data = io.read }
+			puts "read url: #{data}"
+
+			IO.write(data, path)
+		end
+		data
+	end
+
+	def link_to_filename(link)
+		link.gsub("http://", "").gsub("/", "_-_")
+	end
+
+	def filename_to_link(filename)
+		"http://" + filename.gsub("_-_", "/")
 	end
 
 	def fix_link_path(absolute_path, link)
