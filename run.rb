@@ -1,5 +1,6 @@
 load 'results_crawler.rb'
 r = ResultsCrawler.new
+r.participants = "people.csv"
 r.run
 
 

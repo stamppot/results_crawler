@@ -30,12 +30,19 @@ end
 
 class RaceResult
 	attr_accessor :race_name, :race_date, :race_type, :person_name, :category, :results
+
+	def pretty
+		times = results.map {|r| "#{r.first}: #{r.last}"}.join("\t")
+		"#{race_name} (#{category}: #{times}"
+	end
+
 end
 
 class ResultsCrawler
 	attr_accessor :config
 	attr_accessor :config_file
 	attr_accessor :races
+	attr_accessor :participants_list
 	# def init(config)
 	# 	self.config = config
 	# end
@@ -56,9 +63,17 @@ class ResultsCrawler
 		self.config = JSON.parse(self.config_file, object_class: OpenStruct)
 	end
 
+	# def participants
+	# 	# test data
+	# 	["Jens Rasmussen", "Thijs Wiggers", "Thijs de Roo", "Bram Smit", "Klaziena Korver", "Marieke de Graaf"]
+	# end
+
 	def participants
-		# test data
-		["Jens Rasmussen", "Thijs Wiggers", "Thijs de Roo", "Bram Smit", "Klaziena Korver", "Marieke de Graaf"]
+		self.participants_list
+	end
+
+	def participants=(csv_file)
+		self.participants_list = CSV.read(csv_file, :headers => true).to_a.flatten[1..-1]
 	end
 
 	def run(config_json = self.config)
@@ -145,6 +160,11 @@ class ResultsCrawler
 		puts "crawl_races DONE step: #{step.name}"
 		puts races.inspect
 		races
+	end
+
+	def find_results_for_persons(persons)
+
+
 	end
 
 	def fetch_result_pages(races)
