@@ -125,15 +125,15 @@ class ResultsCrawler
 			crawl_races(self.races, step, stop_step)
 		end
 
-		overview_pages = fetch_overview_page(races, steps.last)
+		overview_pages = fetch_race_categories_links(races, steps.last)
 		# puts "overview pages: #{overview_pages.class} #{overview_pages.inspect}"
 		found_links, missing_links  = overview_pages.compact.partition {|h| !h.nil? && !h.empty? }
 
-		puts "output: #{races.inspect}"
-
-		# TODO: call fetch_result_pages
+		# puts "output: #{races.inspect}"
 
 		fetch_result_pages self.races
+
+		# find names in list
 	end
 
 
@@ -155,16 +155,7 @@ class ResultsCrawler
 			race.result_pages ||= {}
 			race.result_pages.each do |category, link|
 				
-				begin
-					page = Nokogiri::HTML(open(link))
-				rescue OpenURI::HTTPError => error
-					response = error.io
-  					response.status
-  					response.string
-  					puts "Error: #{response.status}  #{response.string} url: #{link}"
-  					next
-  				end
-
+				page = load_or_fetch_page(link)
 				csv_hashes = results_page_parser(page) 
 
 				results[category] = csv_hashes
@@ -178,10 +169,11 @@ class ResultsCrawler
 		csv = []
 		# csv.to_a.map {|row| row.to_hash }
 
-		headers = page.css('table tr th.FIELDNAMES').map {|head| head.text }
+		html_object = Nokogiri::HTML(page)
+		headers = html_object.css('table tr th.FIELDNAMES').map {|head| head.text }
 		header_size = headers.size
 		# puts "HEADERS: #{headers.inspect}"
-		page.css('table tr').each do |row|
+		html_object.css('table tr').each do |row|
 	  		tarray = [] 
   			row.xpath('td').each do |cell|
     			tarray << cell.text
@@ -205,8 +197,8 @@ class ResultsCrawler
 		csv_hashes
 	end
 
-	def fetch_overview_page(races, step)
-		puts "fetch_overview_page"
+	def fetch_race_categories_links(races, step)
+		puts "fetch_race_categories_links"
 		filters = step.filters
 
 
@@ -274,21 +266,33 @@ class ResultsCrawler
 	end
 
 	def load_or_fetch_page(link)
-		dir = "cache"
+		dir = Dir.pwd + "/cache"  # TODO: move this check to beginning of run method
 		Dir.mkdir(dir) if !File.exist? dir
 
-		var path = dir + "/" + link_to_filename(link)
+		path = dir + "/" + link_to_filename(link)
 		puts "load from: #{path}"
 
 		data = ""
-		if File.exists(path)
+		if File.exist?(path)
+			puts "File exists: #{path}"
 			data = File.read(path)
 		else
 			# get and save file
-			open(path) { |io| data = io.read }
-			puts "read url: #{data}"
+			begin
+				open(link) { |io| data = io.read }
+			rescue OpenURI::HTTPError => error
+				response = error.io
+				response.status
+				response.string
+				puts "Error: #{response.status}  #{response.string} url: #{link}"
+				return ""
+			end
+			# puts "read url: #{data}"
 
-			IO.write(data, path)
+			open(path, 'w') do |f|
+  				f << data
+			end
+			# IO.write(data, path)
 		end
 		data
 	end
@@ -348,7 +352,7 @@ class ResultsCrawler
 
 		race.results_link = []
 		visit_links.each do |link|
-			page = Nokogiri::HTML(open(link))
+			page = Nokogiri::HTML(load_or_fetch_page(link))
 	
 			puts "fetch_next_links: #{link} "
 			
@@ -403,7 +407,7 @@ class ResultsCrawler
 	# returns [Race(name, type, date, link)]
 	# get a list ofobjects with race data and link to more info
 	def fetch_race_links(link, curr_step, races = {})
-		page = Nokogiri::HTML(open(link))
+		page = Nokogiri::HTML(load_or_fetch_page(link))
 
 		filters = curr_step.filters
 		puts "fetch race_links: #{races.size}"
