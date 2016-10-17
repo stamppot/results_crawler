@@ -1,3 +1,5 @@
+# encoding: utf-8
+
 require 'json'
 # OpenStruct is not included by default so you have to add it.
 require 'ostruct'
@@ -63,11 +65,6 @@ class ResultsCrawler
 		self.config = JSON.parse(self.config_file, object_class: OpenStruct)
 	end
 
-	# def participants
-	# 	# test data
-	# 	["Jens Rasmussen", "Thijs Wiggers", "Thijs de Roo", "Bram Smit", "Klaziena Korver", "Marieke de Graaf"]
-	# end
-
 	def participants
 		self.participants_list
 	end
@@ -95,9 +92,61 @@ class ResultsCrawler
 		links
 	end
 
+	def by_race(race_results)
+		by_race = race_results.inject({}) do |h, r|
+			h[r.race_name] = []
+			h[r.race_name] << r
+			h
+		end
+	end
+
+
+	def by_person(race_results)
+		by_person = race_results.inject({}) do |h, r|
+			h[r.person_name] = []
+			h[r.person_name] << r
+			h
+		end
+	end
+
+	def to_html(grouped_results)
+		html = ["<table>"]
+		grouped_results.each do |race, results|
+
+			html << "<tr></tr>"
+
+			if results.any?  # add header
+				html << "<tr>" 
+
+				# TODO : add category and date
+				results.first.results.keys.each do |header|
+					html << "<th>#{header}</th>"
+				end
+				html << "</tr>" 
+			end
+
+			results.each do |result|
+				html << "<tr>" 
+
+				puts "result.results: #{result.results.inspect}"
+				result.results.values.each do |r|
+					html << "<td>" << r << "</td>"
+				end
+				html << "</tr>" 
+			end
+		end
+
+		html << "</table>"
+		html
+	end
+
+
 	def get_results # for participants, find better name
 		self.run if self.races.nil?
 
+		if participants.nil?
+			puts "Missing list of people. self.participants = <csvfilename>"
+		end
 		people = participants
 
 		race_results = []
@@ -233,7 +282,8 @@ class ResultsCrawler
 			absolute_path = split_path.join("/")
 			puts "absolute path: #{absolute_path}"
 
-			page = Nokogiri::HTML(open(link))
+			p = load_or_fetch_page(link)
+			page = Nokogiri::HTML(p)
 
 			puts "fetch race_links: #{races.size}"
 			filters.each do |f| 
@@ -259,7 +309,7 @@ class ResultsCrawler
 								elem = elem.attributes["href"].select {|at| !at.value.contains("@") }
 							end
 							link = elem.attributes["href"].value.strip
-							text = elem.text
+							text = elem.text.encode("UTF-16be", :invalid=>:replace, :replace=>"?").encode('UTF-8')
 							# puts "text: #{text} : #{link}"
 							if !link.start_with? "http"
 								link = fix_link_path(absolute_path, link)
@@ -269,6 +319,7 @@ class ResultsCrawler
 							if h.key? :regex
 								regex = h[:regex]
 								# puts "regex: #{regex}"
+
 								if text =~ /#{regex}/
 									puts "INCLUDE link: #{text} #{link}\n\n"
 									found_links[text] = link
@@ -351,12 +402,19 @@ class ResultsCrawler
 			# get links
 			links.each do |link|
 				puts "crawl_rec  curr: #{curr_step.name}  action: #{action} link: #{link.inspect}"
-				self.send(action, link, curr_step, races)  # fetch page links
+				self.send(action, link, curr_step, races)  # fetch race links
 			end
 		end
 		races
 	end
 
+	def write(path, data)
+		data = data.join if data.is_a?(Array)
+		open(path, 'w') do |f|
+			f << data
+		end
+	end
+	
 	def find_step(steps, stepname)
 		steps = steps.select {|step| step.name == stepname }
 		steps.any? && steps.first
