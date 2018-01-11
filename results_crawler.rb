@@ -7,6 +7,7 @@ require 'nokogiri'
 require 'open-uri'
 require 'csv'
 
+require 'iconv' unless String.method_defined?(:encode)
 # class CrawlerConfig
 
 # 	attr_accessor :steps, :output
@@ -195,7 +196,7 @@ class ResultsCrawler
 
 		# puts "output: #{races.inspect}"
 
-		fetch_result_pages self.races
+		fetch_result_pages self.races, true
 
 		# find names in list
 	end
@@ -216,16 +217,36 @@ class ResultsCrawler
 
 	end
 
-	def fetch_result_pages(races)
+	def fetch_result_pages(races, write_csv_output = nil)
+
+		outputfolder = "output"
+		if write_csv_output
+			Dir.mkdir(outputfolder) if !Dir.exists?(outputfolder)
+		end
 
 		races.each do |name, race|
 
 			results = {}
 			race.result_pages ||= {}
 			race.result_pages.each do |category, link|
-				
-				page = load_or_fetch_page(link)
-				csv_hashes = results_page_parser(page) 
+				puts "link: #{link.inspect}"
+				filename, page = load_or_fetch_page(link)
+				puts "filename: #{filename}"
+				race_date = get_date_from_link(link)
+				csv_hashes = results_page_parser(page, race_date) 
+
+				if write_csv_output && csv_hashes.any?
+					headers = csv_hashes.first.keys
+					csv_lines = csv_hashes.map {|h| h.values }
+
+					file = filename.gsub(".html", "")
+					puts "input file: #{filename}, output file: #{file}"
+					output_file = "#{outputfolder}/#{file}.csv"
+					CSV.open(output_file, "wb") do |csv|
+						csv << headers
+						csv_lines.each {|line| csv << line}
+    			  	end
+		    	end
 
 				results[category] = csv_hashes
 			end
@@ -233,32 +254,64 @@ class ResultsCrawler
 		end
 	end
 
+	def get_date_from_link(link)
+		find_date = link.scan(/\d+.*/).first
+		find_date = find_date.gsub("_", "") if find_date
+		dt = Date.new(1999)
+		begin
+			dt = Date.parse find_date
+		rescue
+		end
+		dt
+	end
 
-	def results_page_parser(page)
+	def results_page_parser(page, race_date_arg = nil)
 		csv = []
 		# csv.to_a.map {|row| row.to_hash }
 
 		html_object = Nokogiri::HTML(page)
+		race_info = html_object.css('table tr td.REPORTHEADER').map {|head| head.text }
+		race_name = ""
+		race_date = ""
+		if race_date_arg
+			race_date = race_date_arg.strftime("%F")
+			puts "got race_date_from_link: #{race_date}"
+		end
+
+		if race_info.any?
+			info = race_info.first.encode("UTF-16be", :invalid=>:replace, :replace=>"").encode('UTF-8').split("|")  # info is usually split with '|' but not always
+			race_name = info.first
+			race_date_str = info.last
+			puts "race_date_str: #{race_date_str}"
+			begin
+				race_date_dd = race_date_str.length >= 8 && Date.parse(race_date_str)
+			rescue ArgumentError
+				race_date_dd = race_date_arg
+			end
+			puts "got race date from html table header: #{race_date_dd.strftime('%F')}"
+			arg_is_valid_date_but_wrong = race_date_arg && race_date_arg.is_a?(Date) && race_date && race_date_arg.year > race_date_dd.year
+			if arg_is_valid_date_but_wrong || !race_date_arg.is_a?(Date)
+				race_date = race_date_dd.strftime("%F") if race_date.is_a?(Date)
+			end
+		end
+		puts "race_info: #{race_info.inspect} name: #{race_name}, date: #{race_date}, race_date_arg: #{race_date_arg.inspect}"
+		
 		headers = html_object.css('table tr th.FIELDNAMES').map {|head| head.text }
+		headers << "race" << "date"
 		header_size = headers.size
 		# puts "HEADERS: #{headers.inspect}"
 		html_object.css('table tr').each do |row|
 	  		tarray = [] 
   			row.xpath('td').each do |cell|
-    			tarray << cell.text
+    			tarray << cell.text.encode("UTF-16be", :invalid=>:replace, :replace=>"").encode('UTF-8')
 	  		end
-	  		# puts "tarray: #{tarray.inspect}"
+	  		tarray << race_name << race_date
+	  		puts "tarray: #{tarray.inspect}"
 	  		next if tarray.size != header_size
   			csv << tarray
 		end
 
 		# puts "CSV output:\n#{csv}"
-
-		# CSV.new(body, :headers => true, :header_converters => :symbol, :converters => [:all, :blank_to_nil])
-    	# csv_str = CSV.generate(:col_sep => ";", :row_sep => :auto) do |csv_output|
-     #  		csv_output << headers
-    	#   	csv.each { |line| csv_output << line }
-    	# end
 		# puts "csv_str: #{csv_str}"		
 
 		csv_hashes = csv.map {|row| headers.zip(row).to_h }
@@ -282,7 +335,7 @@ class ResultsCrawler
 			absolute_path = split_path.join("/")
 			puts "absolute path: #{absolute_path}"
 
-			p = load_or_fetch_page(link)
+			filename, p = load_or_fetch_page(link)
 			page = Nokogiri::HTML(p)
 
 			puts "fetch race_links: #{races.size}"
@@ -308,8 +361,8 @@ class ResultsCrawler
 								puts "DOUBLE attributes: #{elem.attributes["href"].value}"
 								elem = elem.attributes["href"].select {|at| !at.value.contains("@") }
 							end
-							link = elem.attributes["href"].value.strip
-							text = elem.text.encode("UTF-16be", :invalid=>:replace, :replace=>"?").encode('UTF-8')
+							link = elem.attributes["href"].value.strip.encode("UTF-16be", :invalid=>:replace, :replace=>"").encode('UTF-8')
+							text = elem.text.encode("UTF-16be", :invalid=>:replace, :replace=>"").encode('UTF-8')
 							# puts "text: #{text} : #{link}"
 							if !link.start_with? "http"
 								link = fix_link_path(absolute_path, link)
@@ -340,7 +393,8 @@ class ResultsCrawler
 		dir = Dir.pwd + "/cache"  # TODO: move this check to beginning of run method
 		Dir.mkdir(dir) if !File.exist? dir
 
-		path = dir + "/" + link_to_filename(link)
+		filename = link_to_filename(link)
+		path = dir + "/" + filename
 		puts "load from: #{path}"
 
 		data = ""
@@ -357,6 +411,8 @@ class ResultsCrawler
 				response.string
 				puts "Error: #{response.status}  #{response.string} url: #{link}"
 				return ""
+			rescue URI::InvalidURIError
+				return ""
 			end
 			# puts "read url: #{data}"
 
@@ -365,16 +421,24 @@ class ResultsCrawler
 			end
 			# IO.write(data, path)
 		end
-		data
+
+		if String.method_defined?(:encode)
+			data.encode!('UTF-8', 'UTF-8', :invalid => :replace, :replace => "O")
+		else
+			ic = Iconv.new('UTF-8', 'UTF-8//IGNORE')
+			data = ic.iconv(file_contents)
+		end
+
+		[filename, data] # return filename and page data
 	end
 
 	def link_to_filename(link)
-		link.gsub("http://", "").gsub("/", "_-_")
+		link.gsub("http://", "").gsub("nl.mylaps.com/evenementen/uitslagen/", "").gsub("/", "-")
 	end
 
-	def filename_to_link(filename)
-		"http://" + filename.gsub("_-_", "/")
-	end
+	# def filename_to_link(filename)
+	# 	"http://" + filename.gsub("_-_", "/")
+	# end
 
 	def fix_link_path(absolute_path, link)
 		absolute_path += "/" if !absolute_path.end_with?("/") && !link.start_with?("/")
@@ -430,7 +494,8 @@ class ResultsCrawler
 
 		race.results_link = []
 		visit_links.each do |link|
-			page = Nokogiri::HTML(load_or_fetch_page(link))
+			filename, page = load_or_fetch_page(link)
+			page = Nokogiri::HTML(page)
 	
 			puts "fetch_next_links: #{link} "
 			
@@ -467,6 +532,7 @@ class ResultsCrawler
 					puts "race_name: #{name}"
 					# add info to already found race, or create race
 					race.date ||= date # only set if not already set
+					puts "race_date: #{race.date}"
 				end
 				
 				if !next_link.empty?
@@ -485,7 +551,8 @@ class ResultsCrawler
 	# returns [Race(name, type, date, link)]
 	# get a list ofobjects with race data and link to more info
 	def fetch_race_links(link, curr_step, races = {})
-		page = Nokogiri::HTML(load_or_fetch_page(link))
+		filename, data = load_or_fetch_page(link)
+		page = Nokogiri::HTML(data)
 
 		filters = curr_step.filters
 		puts "fetch race_links: #{races.size}"
@@ -535,10 +602,18 @@ class ResultsCrawler
 					{
 						"name" => "step1",
 						"input_links" => [
+							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-01",
+							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-02",
+							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-03",
+							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-04",
+							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-05",
 							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-06",
 							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-07",
 							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-08",
-							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-09"
+							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-09",
+							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-10",
+							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-11",
+							"http =>//www.mylapseventtiming.nl/events/?searchDate=2016-12"
 						],
 						"filters": [
 							{

@@ -5,13 +5,30 @@
 				"name": "step1",
 				"action": "fetch_race_links",
 				"input_links": [
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-01",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-02",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-03",
 					"http://www.mylapseventtiming.nl/events/?searchDate=2016-04",
 					"http://www.mylapseventtiming.nl/events/?searchDate=2016-05",
 					"http://www.mylapseventtiming.nl/events/?searchDate=2016-06",
 					"http://www.mylapseventtiming.nl/events/?searchDate=2016-07",
 					"http://www.mylapseventtiming.nl/events/?searchDate=2016-08",
 					"http://www.mylapseventtiming.nl/events/?searchDate=2016-09",
-					"http://www.mylapseventtiming.nl/events/?searchDate=2016-10"
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-10",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-11",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2016-12",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-01",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-02",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-03",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-04",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-05",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-06",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-07",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-08",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-09",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-10",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-11",
+					"http://www.mylapseventtiming.nl/events/?searchDate=2017-12"
 				],
 				"filters": [
 					{
